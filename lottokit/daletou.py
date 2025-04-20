@@ -161,23 +161,17 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
 
         for d in data:
             # 构造通用记录: [期号, 原始星期, 计算星期, 前区列表, 后区列表]
-            common = [
-                d[0],
-                d[1],
-                # self.calculate_weekday(d[1]),
-                self.calculate_front(d),
-                self.calculate_back(d)
-            ]
+            lottery_data = self.convert_lottery_data(d)
             # 如果已有记录的 last_period >= 本次期号，则跳过
-            if int(record_data.get('last_period', 0)) >= int(d[0]):
+            if int(record_data.get('last_period', 0)) >= int(lottery_data.period):
                 continue
 
             # 日志输出
-            self.app_log.info(f"Update {common} to {self.period_record_path}")
+            self.app_log.info(f"Update {lottery_data} to {self.period_record_path}")
             # 更新 last_period 并按期号后三位分组追加
-            record_data['last_period'] = d[0]
-            period_key = d[0][-3:]
-            record_data.setdefault(period_key, []).append(common)
+            record_data['last_period'] = lottery_data.period
+            period_key = lottery_data.period[-3:]
+            record_data.setdefault(period_key, []).append(lottery_data)
 
         # 写回文件
         self.write_json_data_to_file(self.period_record_path, record_data, app_log=self.app_log)
@@ -196,20 +190,14 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             record_data = {}
 
         for d in data:
-            common = [
-                d[0],
-                d[1],
-                # self.calculate_weekday(d[1]),
-                self.calculate_front(d),
-                self.calculate_back(d)
-            ]
-            if int(record_data.get('last_period', 0)) >= int(d[0]):
+            lottery_data = self.convert_lottery_data(d)
+            if int(record_data.get('last_period', 0)) >= int(lottery_data.period):
                 continue
 
-            self.app_log.info(f"Update {common} to {self.weekday_record_path}")
+            self.app_log.info(f"Update {lottery_data} to {self.weekday_record_path}")
             record_data['last_period'] = d[0]
-            weekday_key = str(common[2])
-            record_data.setdefault(weekday_key, []).append(common)
+            weekday_key = str(lottery_data.weekday)
+            record_data.setdefault(weekday_key, []).append(lottery_data)
 
         self.write_json_data_to_file(self.weekday_record_path, record_data, app_log=self.app_log)
 
@@ -229,12 +217,20 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             # 需要前一期数据，i 从 1 开始
             if i == 0:
                 continue
+            sum_total     = int(data[-4]) if len(d) > self.origin_size else 0
+            span          = int(data[-3]) if len(d) > self.origin_size else 0
+            zone_ratio    = tuple(int(x) for x in str(data[-2]).split(':')) if len(d) > self.origin_size else ()
+            odd_even_ratio= tuple(int(x) for x in str(data[-1]).split(':')) if len(d) > self.origin_size else ()
             common = [
                 d[0],
                 d[1],
                 # self.calculate_weekday(d[1]),
                 self.calculate_front(d),
-                self.calculate_back(d)
+                self.calculate_back(d),
+                sum_total,
+                span,
+                zone_ratio,
+                odd_even_ratio,
             ]
             if int(record_data.get('last_period', 0)) >= int(d[0]):
                 continue
@@ -273,12 +269,20 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             # 需要前一期数据，i 从 1 开始
             if i == 0:
                 continue
+            sum_total     = int(data[-4]) if len(d) > self.origin_size else 0
+            span          = int(data[-3]) if len(d) > self.origin_size else 0
+            zone_ratio    = tuple(int(x) for x in str(data[-2]).split(':')) if len(d) > self.origin_size else ()
+            odd_even_ratio= tuple(int(x) for x in str(data[-1]).split(':')) if len(d) > self.origin_size else ()
             common = [
                 d[0],
                 d[1],
                 # self.calculate_weekday(d[1]),
                 self.calculate_front(d),
-                self.calculate_back(d)
+                self.calculate_back(d),
+                sum_total,
+                span,
+                zone_ratio,
+                odd_even_ratio,
             ]
             if int(record_data.get('last_period', 0)) >= int(d[0]):
                 continue
@@ -317,12 +321,20 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             # 保证至少有4期历史
             if i < 4:
                 continue
+            sum_total     = int(data[-4]) if len(d) > self.origin_size else 0
+            span          = int(data[-3]) if len(d) > self.origin_size else 0
+            zone_ratio    = tuple(int(x) for x in str(data[-2]).split(':')) if len(d) > self.origin_size else ()
+            odd_even_ratio= tuple(int(x) for x in str(data[-1]).split(':')) if len(d) > self.origin_size else ()
             common = [
                 d[0],
                 d[1],
                 # self.calculate_weekday(d[1]),
                 self.calculate_front(d),
-                self.calculate_back(d)
+                self.calculate_back(d),
+                sum_total,
+                span,
+                zone_ratio,
+                odd_even_ratio,
             ]
             if int(record_data.get('last_period', 0)) >= int(d[0]):
                 continue
@@ -361,12 +373,20 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             # 保证至少有10期历史
             if i < 9:
                 continue
+            sum_total     = int(data[-4]) if len(d) > self.origin_size else 0
+            span          = int(data[-3]) if len(d) > self.origin_size else 0
+            zone_ratio    = tuple(int(x) for x in str(data[-2]).split(':')) if len(d) > self.origin_size else ()
+            odd_even_ratio= tuple(int(x) for x in str(data[-1]).split(':')) if len(d) > self.origin_size else ()
             common = [
                 d[0],
                 d[1],
                 # self.calculate_weekday(d[1]),
                 self.calculate_front(d),
-                self.calculate_back(d)
+                self.calculate_back(d),
+                sum_total,
+                span,
+                zone_ratio,
+                odd_even_ratio,
             ]
             if int(record_data.get('last_period', 0)) >= int(d[0]):
                 continue
@@ -911,21 +931,16 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
         next_period  = next_period  or self.get_next_period()
 
         history_data = self.get_previous_history_data(next_period)
-        period_data  = [self.convert_lottery_data(d)
-                        for d in self.get_previous_period_data(next_period)]
-        weekday_data = [self.convert_lottery_data(d)
-                        for d in self.get_previous_weekday_data(
-                            next_period, next_weekday
-                        )]
+        period_data  = [self.convert_lottery_data(d) for d in self.get_previous_period_data(next_period)]
+        weekday_data = [self.convert_lottery_data(d) for d in self.get_previous_weekday_data(next_period, next_weekday)]
+        print(3, weekday_data)
 
         # 计算前区胆码
         front_banker_numbers = set()
         for data in (history_data, period_data, weekday_data):
             seqs = [self.calculate_front(d) for d in data]
             tmp = self.calculate_front_bankers(seqs, next_period, next_weekday, show_details)
-            front_banker_numbers.update(
-                {n for n in tmp if 1 <= n <= self.front_vocab_size}
-            )
+            front_banker_numbers.update({n for n in tmp if 1 <= n <= self.front_vocab_size})
         self.detail_log(
             self.app_log, show_details,
             en=f"front banker numbers: {sorted(front_banker_numbers)}, size: {len(front_banker_numbers)}",
@@ -968,11 +983,8 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             前区区间比率杀号逻辑，相似但结果作为胆码。
             """
             oe_ratio = self.calculate_odd_even_ratio(last_sequence)
-            z_ratio  = self.calculate_zone_ratio(last_sequence, self.front_zone_ranges)
-            dist     = self.calculate_euclidean_distance(
-                           (z_ratio[0], z_ratio[-1]),
-                           (oe_ratio[0], oe_ratio[-1])
-                       )
+            z_ratio = self.calculate_zone_ratio(last_sequence, self.front_zone_ranges)
+            dist = self.calculate_euclidean_distance((z_ratio[0], z_ratio[-1]), (oe_ratio[0], oe_ratio[-1]))
             nums = {
                 self.real_round(abs(last_sequence[z_ratio[0]-1] - last_sequence[z_ratio[-1]-1])),
                 self.real_round((abs(last_sequence[-(z_ratio[0]+1)] + last_sequence[-(z_ratio[-1]+1)]) + dist)
@@ -996,10 +1008,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
                     i = last_sequence.index(tmp[0])
                     tmp = [last_sequence[i-1], last_sequence[(i+1)%len(last_sequence)]]
                 if tmp:
-                    avg_set.add(
-                        self.real_round(sum(tmp)/next_weekday + len(tmp))
-                        % self.front_vocab_size
-                    )
+                    avg_set.add(self.real_round(sum(tmp)/next_weekday + len(tmp)) % self.front_vocab_size)
             bankers.update(avg_set)
             self.detail_log(
                 self.app_log, show_details,
@@ -1129,15 +1138,15 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
 
     def get_previous_weekday_data(
         self,
-        next_weekday: int = None,
-        next_period: int = None
+        next_period: int = None,
+        next_weekday: int = None
     ) -> List[List[Any]]:
         """
         从按星期分类的 JSON 文件中读取数据，并返回指定星期及期号之前的记录。
 
         参数:
-          next_weekday (int, optional): 下期星期，如 1～7。若为 None，则使用当前 get_next_weekday()。
           next_period  (int, optional): 下期期号，如 24001。若指定，则截取该日期之前的数据。
+          next_weekday (int, optional): 下期星期，如 1～7。若为 None，则使用当前 get_next_weekday()。
 
         返回:
           List[List[Any]]: 同一天星期的历史记录列表；出错时返回空列表。
@@ -1153,11 +1162,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             weekday_data = weekday_data_map.get(key, [])
             # 3. 若指定 next_period，则截取至该期之前的数据
             if next_period is not None:
-                index = next(
-                    (i for i, row in enumerate(weekday_data)
-                     if row[0] == str(next_period)),
-                    -1
-                )
+                index = next((i for i, row in enumerate(weekday_data) if str(row[0]).endswith(str(next_period))), -1)
                 weekday_data = weekday_data[:index] if index != -1 else weekday_data[:]
             return weekday_data
         except Exception as ex:
@@ -1205,9 +1210,8 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
                 odd_even_ratio=odd_even_ratio
             )
         except Exception as ex:
-            print(f"convert_lottery_data 解析失败: {ex}")
             # 回退：直接按原始列表顺序 unpack
-            return self.Lottery(*data, '', '', '', '')
+            return self.Lottery(*data)
 
     def calculate_front(self, data: Union[Lottery, Iterable[Any]]) -> List[int]:
         """
@@ -1528,11 +1532,9 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             if use_index:
                 # 若使用索引模式，先对每期号码做编码
                 if zone == 'front':
-                    matrix = [self.encode_combination(l.front, max_n=self.front_vocab_size)
-                              for l in last_window]
+                    matrix = [self.encode_combination(l.front, max_n=self.front_vocab_size) for l in last_window]
                 else:
-                    matrix = [self.encode_combination(l.back,  max_n=self.back_vocab_size)
-                              for l in last_window]
+                    matrix = [self.encode_combination(l.back,  max_n=self.back_vocab_size) for l in last_window]
                 # 对每个模型函数，直接传入编码后的矩阵
                 predictions = [(model_fn(matrix), ) for model_fn in model_functions]
             else:
@@ -1542,15 +1544,12 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
                 else:
                     matrix = [l.back  for l in last_window]
                 # 转置矩阵：按列生成序列
-                matrix_flip = [[matrix[r][c] for r in range(len(matrix))]
-                               for c in range(len(matrix[0]))]
+                matrix_flip = [[matrix[r][c] for r in range(len(matrix))] for c in range(len(matrix[0]))]
                 # 对每个模型函数，传入每列序列，收集预测结果
-                predictions = [tuple(model_fn(col_seq) for col_seq in matrix_flip)
-                               for model_fn in model_functions]
+                predictions = [tuple(model_fn(col_seq) for col_seq in matrix_flip) for model_fn in model_functions]
             return predictions
 
         # 1. 数据为空时抛错
-        print(data)
         if not data:
             raise ValueError("No data provided and no file reading implemented.")
 
@@ -1588,26 +1587,19 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
         predictions_all: List[List[int]] = []
         for i in range(len(model_functions)):
             # 保证索引在 [1, vocab_size] 范围
-            idx_front = [min(self.front_vocab_size, max(1, x))
-                         for x in predictions_front[i]]
-            idx_back  = [min(self.back_vocab_size,  max(1, x))
-                         for x in predictions_back[i]]
+            idx_front = [min(self.front_vocab_size, max(1, x)) for x in predictions_front[i]]
+            idx_back  = [min(self.back_vocab_size,  max(1, x)) for x in predictions_back[i]]
             if use_index:
                 # 解码回前区和后区组合
-                nums_front = self.decode_combination(idx_front[0],
-                                                    k=self.front_size,
-                                                    max_n=self.front_vocab_size)
-                nums_back  = self.decode_combination(idx_back[0],
-                                                    k=self.back_size,
-                                                    max_n=self.back_vocab_size)
+                nums_front = self.decode_combination(idx_front[0], k=self.front_size, max_n=self.front_vocab_size)
+                nums_back  = self.decode_combination(idx_back[0], k=self.back_size, max_n=self.back_vocab_size)
             else:
                 nums_front = idx_front
                 nums_back  = idx_back
             predictions_all.append(nums_front + nums_back)
 
         # 6. 将每组预测数字列表重新转换为 Lottery 对象输出
-        return [self.convert_lottery_data(['', '', *nums])
-                for nums in predictions_all]
+        return [self.convert_lottery_data(['', '', *nums]) for nums in predictions_all]
 
     def predict_by_last_period(
         self,
@@ -1635,38 +1627,19 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
         history_data = self.get_previous_history_data(next_period=next_period)
 
         # 2. 在历史数据上应用滑窗预测，得到 MaybeCombination 列表
-        maybe_combinations = self.predict_by_last_window_data(
-            data=history_data,
-            window=window_size,
-            use_index=use_index
-        )
+        maybe_combinations = self.predict_by_last_window_data(data=history_data, window=window_size, use_index=use_index)
 
         # 3. 将 NamedTuple 的 front/back 合并为纯数字列表
-        predict_data: List[List[int]] = [
-            combo.front + combo.back for combo in maybe_combinations
-        ]
+        predict_data: List[List[int]] = [combo.front + combo.back for combo in maybe_combinations]
 
         # 4. 如需显示详情，打印所有预测号码
-        self.detail_log(
-            app_log=self.app_log,
-            show_details=show_details,
-            en=predict_data,
-            zh=predict_data
-        )
+        self.detail_log(app_log=self.app_log, show_details=show_details, en=predict_data, zh=predict_data)
 
         # 5. 对历史数据做滑窗特征处理，获取特征字典
-        handle_result: Dict[str, Any] = self.handle_last_window_data(
-            data=history_data,
-            window=window_size
-        )
+        handle_result: Dict[str, Any] = self.handle_last_window_data(data=history_data, window=window_size)
 
         # 6. 打印处理后得到的特征结果
-        self.detail_log(
-            app_log=self.app_log,
-            show_details=show_details,
-            en=handle_result,
-            zh=handle_result
-        )
+        self.detail_log(app_log=self.app_log, show_details=show_details, en=handle_result, zh=handle_result)
 
         # 7. 返回预测号码与特征
         return predict_data, handle_result
@@ -1697,38 +1670,19 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
         period_data = self.get_previous_period_data(next_period=next_period)
 
         # 2. 在历史数据上应用滑窗预测
-        maybe_combinations = self.predict_by_last_window_data(
-            data=period_data,
-            window=window_size,
-            use_index=use_index
-        )
+        maybe_combinations = self.predict_by_last_window_data(data=period_data, window=window_size, use_index=use_index)
 
         # 3. 合并 NamedTuple 的 front/back 为数字列表
-        predict_data: List[List[int]] = [
-            combo.front + combo.back for combo in maybe_combinations
-        ]
+        predict_data: List[List[int]] = [combo.front + combo.back for combo in maybe_combinations]
 
         # 4. 如需显示详情，打印所有预测号码
-        self.detail_log(
-            app_log=self.app_log,
-            show_details=show_details,
-            en=predict_data,
-            zh=predict_data
-        )
+        self.detail_log(app_log=self.app_log, show_details=show_details, en=predict_data, zh=predict_data)
 
         # 5. 对历史数据做滑窗特征处理
-        handle_result: Dict[str, Any] = self.handle_last_window_data(
-            data=period_data,
-            window=window_size
-        )
+        handle_result: Dict[str, Any] = self.handle_last_window_data(data=period_data, window=window_size)
 
         # 6. 打印处理后得到的特征结果
-        self.detail_log(
-            app_log=self.app_log,
-            show_details=show_details,
-            en=handle_result,
-            zh=handle_result
-        )
+        self.detail_log(app_log=self.app_log, show_details=show_details, en=handle_result, zh=handle_result)
 
         # 7. 返回预测号码与特征
         return predict_data, handle_result
@@ -1758,44 +1712,22 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             - handle_result: handle_last_window_data 生成的特征字典
         """
         # 1. 获取指定星期的历史开奖数据列表
-        weekday_data = self.get_previous_weekday_data(
-            next_weekday=next_weekday,
-            next_period=next_period
-        )
+        weekday_data = self.get_previous_weekday_data(next_weekday=next_weekday, next_period=next_period)
 
         # 2. 基于历史数据按滑窗预测，返回 Lottery 对象列表
-        maybe_combinations = self.predict_by_last_window_data(
-            data=weekday_data,
-            window=window_size,
-            use_index=use_index
-        )
+        maybe_combinations = self.predict_by_last_window_data(data=weekday_data, window=window_size, use_index=use_index)
 
         # 3. 将 Lottery.namedtuple 拆分为纯数字列表（前区 + 后区）
-        predict_data: List[List[int]] = [
-            combo.front + combo.back for combo in maybe_combinations
-        ]
+        predict_data: List[List[int]] = [combo.front + combo.back for combo in maybe_combinations]
 
         # 4. 如果需要详细展示，打印所有预测号码
-        self.detail_log(
-            app_log=self.app_log,
-            show_details=show_details,
-            en=predict_data,
-            zh=predict_data
-        )
+        self.detail_log(app_log=self.app_log, show_details=show_details, en=predict_data, zh=predict_data)
 
         # 5. 对历史数据做滑窗特征处理，返回特征字典
-        handle_result: Dict[str, Any] = self.handle_last_window_data(
-            data=weekday_data,
-            window=window_size
-        )
+        handle_result: Dict[str, Any] = self.handle_last_window_data(data=weekday_data, window=window_size)
 
         # 6. 打印处理后的特征结果
-        self.detail_log(
-            app_log=self.app_log,
-            show_details=show_details,
-            en=handle_result,
-            zh=handle_result
-        )
+        self.detail_log(app_log=self.app_log, show_details=show_details, en=handle_result, zh=handle_result)
 
         # 7. 返回预测号码和特征字典
         return predict_data, handle_result
@@ -1827,33 +1759,21 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
         features: Dict[str, Any] = {}
 
         # (1) 按“上一期”策略预测
-        p_lottery, p_feature = self.predict_by_last_period(
-            next_period=next_period,
-            show_details=show_details,
-            window_size=window_size,
-            use_index=use_index
-        )
+        p_lottery, p_feature = self.predict_by_last_period(next_period=next_period, show_details=show_details,
+                                                           window_size=window_size, use_index=use_index)
         predictions.extend(p_lottery)
         features.update(p_feature)
 
         # (2) 按“同期期”策略预测
-        p_lottery, p_feature = self.predict_by_same_period(
-            next_period=next_period,
-            show_details=show_details,
-            window_size=window_size,
-            use_index=use_index
-        )
+        p_lottery, p_feature = self.predict_by_same_period(next_period=next_period, show_details=show_details,
+                                                           window_size=window_size, use_index=use_index)
         predictions.extend(p_lottery)
         features.update(p_feature)
 
         # (3) 按“同星期”策略预测
-        p_lottery, p_feature = self.predict_by_last_weekday(
-            next_weekday=next_weekday,
-            next_period=next_period,
-            show_details=show_details,
-            window_size=window_size,
-            use_index=use_index
-        )
+        p_lottery, p_feature = self.predict_by_last_weekday(next_weekday=next_weekday, next_period=next_period,
+                                                            show_details=show_details, window_size=window_size,
+                                                            use_index=use_index)
         predictions.extend(p_lottery)
         features.update(p_feature)
 
@@ -1944,12 +1864,8 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             en="Make initial predictions using model predictions",
             zh="使用模型预测进行初步预测"
         )
-        predict_data, feature_data = self.model_predict(
-            next_period=next_period,
-            next_weekday=next_weekday,
-            show_details=None,
-            window_size=window_size
-        )
+        predict_data, feature_data = self.model_predict(next_period=next_period, next_weekday=next_weekday,
+                                                        show_details=None, window_size=window_size)
 
         # 2. 将多次模型结果按序分组：3 组，每组 3 条
         predict_sets = [[set(), set()] for _ in range(3)]

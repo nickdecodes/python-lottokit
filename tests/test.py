@@ -17,4 +17,4 @@ from lottokit import Daletou
 if __name__ == '__main__':
     d = Daletou()
     # d.download_data()
-    print(d.predict(next_period=42, predict_type='model'))
+    d.predict(next_period=42, predict_type='analyze')
