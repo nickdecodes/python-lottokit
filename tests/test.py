@@ -10,6 +10,11 @@
 @SoftWare: 
 """
 
+import sys
+sys.path.append('..')
+from lottokit import Daletou
 
 if __name__ == '__main__':
-    pass
+    d = Daletou()
+    # d.download_data()
+    print(d.predict(next_period=42, predict_type='model'))

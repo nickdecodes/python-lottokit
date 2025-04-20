@@ -8,32 +8,33 @@
 @FileName: model_util.py
 @DateTime: 2024/7/22 10:06
 @SoftWare: PyCharm
+模型工具模块 model_util.py
+提供多种回归、预测及特征变换方法，包括 EMA、线性回归、随机森林、RSI、SARIMA 等。
 """
-import math
 
+import math
 import numpy as np
 import pandas as pd
 from pmdarima import auto_arima
-from sklearn.pipeline import Pipeline
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline, make_pipeline
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import PolynomialFeatures
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.base import BaseEstimator, TransformerMixin
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from .calculate_util import CalculateUtil
 
 
 class CustomTransformer(BaseEstimator, TransformerMixin):
+    """
+    自定义特征转换器，用于随机森林管道中：
+      - 对输入 X 做标准化；
+      - 使用指定 RandomForestRegressor 进行拟合与预测；
+      - 计算每行的标准差与 RSI；
+      - 输出 [最后元素, 预测值, 标准差, RSI] 组合特征。
+    """
     def __init__(self, model: RandomForestRegressor):
-        """
-        Initialize the transformer with a RandomForestRegressor model and a StandardScaler for feature scaling.
-
-        Parameters:
-        model (RandomForestRegressor): The RandomForestRegressor model to be used for predictions.
-        """
         self.calculate_util = CalculateUtil()
         self.model_util = ModelUtil()
         self.model = model
@@ -41,14 +42,8 @@ class CustomTransformer(BaseEstimator, TransformerMixin):
 
     def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> 'CustomTransformer':
         """
-        Fit the RandomForest model and the scaler on the training data.
-
-        Parameters:
-        X (np.ndarray): Training data features.
-        y (Optional[np.ndarray]): Training data labels.
-
-        Returns:
-        RandomForestRegressorTransformer: The instance of this transformer.
+        拟合转换器：
+          - 对 X 标准化后，训练 RandomForestRegressor。
         """
         X_scaled = self.scaler.fit_transform(X)
         self.model.fit(X_scaled, y)
@@ -56,359 +51,221 @@ class CustomTransformer(BaseEstimator, TransformerMixin):
 
     def transform(self, X: np.ndarray) -> np.ndarray:
         """
-        Transform the input data by scaling, making predictions, and calculating per-row statistics.
-
-        Parameters:
-        X (np.ndarray): Data to transform.
-
-        Returns:
-        np.ndarray: Transformed data including last elements, predictions, standard deviations, and RSI values.
+        转换数据：
+          - 对 X 标准化；
+          - 生成预测值 predictions；
+          - 计算每行的标准差 sd_per_row 和 RSI rsi_per_row；
+          - 提取每行最后一个值 last_elements；
+          - 拼合为新特征阵 transformed_data。
         """
         X_scaled = self.scaler.transform(X)
         predictions = self.model.predict(X_scaled)
-
-        # Calculate standard deviation and RSI for each row
         sd_per_row = np.array([self.calculate_util.calculate_standard_deviation_welford(row) for row in X])
-        rsi_per_row = np.array([self.model_util.relative_strength_index(row, period=len(row) // 2) for row in X])
-
-        # Extract the last element from each row
+        rsi_per_row = np.array([self.model_util.relative_strength_index(row, period=len(row)//2) for row in X])
         last_elements = X[:, -1]
-
-        # Combine all the computed features into a single array
         transformed_data = np.c_[last_elements, predictions, sd_per_row, rsi_per_row]
         return transformed_data
 
 
 class ModelUtil:
+    """
+    多种预测策略工具类：
+      - 指数移动平均 EMA；
+      - 线性回归；
+      - 多项式回归；
+      - 谐波回归；
+      - 随机森林预测管道；
+      - RSI 计算；
+      - SARIMA 预测。
+    """
+
     @staticmethod
     def exponential_moving_average_next_value(
-            numeric_sequence: List[int],
-            span: int = 5,
-            enable_rolling_difference: bool = False
+        numeric_sequence: List[int],
+        span: int = 5,
+        enable_rolling_difference: bool = False
     ) -> int:
         """
-        Calculate the Exponential Moving Average (EMA) and use rolling difference to predict the next value of a sequence.
-
-        EMA is a type of moving average that places a greater weight and significance
-        on the most recent data points. It's more responsive to new information compared
-        to a simple moving average (SMA).
-
-        :param numeric_sequence: A list or sequence of numbers for which the EMA is to be calculated.
-        :param span: The number of periods over which to calculate the EMA. Default is 5.
-        :param enable_rolling_difference: weather to enable rolling. default is False
-        :return: Predicted next value of the sequence based on EMA and rolling difference.
-        :raises ValueError: If the input list is empty or contains non-numeric values.
+        基于 EMA（指数移动平均）与可选差分预测下一个值，并结合 RSI 调整向上/向下取整。
+        :param numeric_sequence: 输入序列
+        :param span: EMA 平滑窗口
+        :param enable_rolling_difference: 是否结合差分项
         """
         if not numeric_sequence:
-            raise ValueError("The numeric sequence cannot be empty.")
+            raise ValueError("序列不可为空")
         if not all(isinstance(x, (int, float)) for x in numeric_sequence):
-            raise ValueError("All elements in the numeric sequence must be numbers.")
+            raise ValueError("序列元素必须为数值")
 
-        # Convert the numeric sequence into a pandas Series object
         series = pd.Series(numeric_sequence)
+        ema = series.ewm(span=span, min_periods=min(span, len(series)), adjust=False).mean()
+        diff = series.diff()
 
-        # Calculate the EMA using pandas' ewm method
-        # Adjust 'min_periods' to handle shorter sequences gracefully
-        ema = series.ewm(span=span, min_periods=min(span, len(numeric_sequence)), adjust=False).mean()
-
-        # Calculate rolling difference
-        rolling_difference = series.diff()
-
-        # Predict the next value by extrapolating the last rolling difference and the last EMA value
-        if len(rolling_difference) > 1 and enable_rolling_difference is True:
-            predicted_next_value = ema.iloc[-1] + rolling_difference.iloc[-1]
+        if enable_rolling_difference and len(diff) > 1:
+            pred = ema.iloc[-1] + diff.iloc[-1]
         else:
-            # If there's no enough data to calculate difference, use the last EMA as the prediction
-            predicted_next_value = ema.iloc[-1]
+            pred = ema.iloc[-1]
 
+        # 根据 RSI 决定向上或向下取整
         rsi = ModelUtil.relative_strength_index(numeric_sequence, period=5)
-        # Return the predicted next value rounded to the nearest integer
-        if rsi <= 50:
-            return math.ceil(predicted_next_value)
-        # elif rsi in range(50, 70):
-        #     return CalculateUtil.real_round(predicted_next_value)
-        else:
-            return math.floor(predicted_next_value)
+        return math.ceil(pred) if rsi <= 50 else math.floor(pred)
 
     @staticmethod
     def linear_regression_next_value(numeric_sequence: List[int], degree: int = 1) -> int:
         """
-        Predicts the next value in a sequence using linear regression.
-
-        Linear regression involves fitting a line to the data points in such a way
-        that the distance between the data points and the line is minimized. This function
-        uses the method to predict the next value in a given sequence of numbers by fitting
-        a model to the sequence and examining the slope of the line.
-
-        :param numeric_sequence: A list or sequence of numbers to model.
-        :param degree: degree for linear regression. Default is 1.
-        :return: The predicted next value in the sequence as an integer.
-        :raises ValueError: If the input sequence is empty or too short for regression analysis.
+        基于线性（或多项式）回归预测下一个值。
+        :param numeric_sequence: 输入序列
+        :param degree: 回归多项式次数，degree=1 即线性
         """
-        if not numeric_sequence:
-            raise ValueError("The numeric sequence cannot be empty.")
         if len(numeric_sequence) < 2:
-            raise ValueError("The numeric sequence must contain at least two elements for linear regression.")
+            raise ValueError("序列长度至少为2")
 
-        # Convert the numeric sequence into a numpy array and reshape for sklearn
-        data = np.array(numeric_sequence).reshape(-1, 1)
-
-        # Create an array representing time or the independent variable, reshaped as a column
-        index = np.array(range(len(data))).reshape(-1, 1)
-
-        # Create a LinearRegression model and fit it to the data
-        poly_features = PolynomialFeatures(degree=degree)
-        index_poly = poly_features.fit_transform(index)
-        model = LinearRegression()
-        # model.fit(index, data)
-        model.fit(index_poly, data)
-
-        # Predict the next value in the sequence
-        next_index = np.array([len(data)]).reshape(-1, 1)  # Next index to predict
-        future_index_poly = poly_features.transform(next_index)
-        # prediction = model.predict(next_index)[0]
-        prediction = model.predict(future_index_poly)[0]
-
-        # Return the predicted value rounded to the nearest integer
-        return CalculateUtil.real_round(prediction)
+        X = np.arange(len(numeric_sequence)).reshape(-1, 1)
+        y = np.array(numeric_sequence)
+        poly = PolynomialFeatures(degree)
+        X_poly = poly.fit_transform(X)
+        model = LinearRegression().fit(X_poly, y)
+        next_X = poly.transform([[len(y)]])
+        pred = model.predict(next_X)[0]
+        return CalculateUtil.real_round(pred)
 
     @staticmethod
     def multivariate_polynomial_regression_next_value(
-            numeric_sequence: List[int],
-            rolling_size: int = 3,
-            degrees: int = 3,
+        numeric_sequence: List[int],
+        rolling_size: int = 3,
+        degrees: int = 3
     ) -> float:
         """
-        Predicts the next value in a numeric sequence using multivariate polynomial regression.
-
-        This method applies a polynomial regression model to a numeric sequence to predict the next value.
-        It utilizes a rolling window approach to create datasets, scales the features, and fits a polynomial
-        regression model to make the prediction.
-
-        Args:
-            numeric_sequence (List[int]): The list of integers representing the sequence.
-            rolling_size (int): The number of elements in each rolling window.
-            degrees (int): The degree of the polynomial regression. Defaults to 3.
-
-        Returns:
-            float: The predicted next value in the sequence.
-
-        Raises:
-            ValueError: If the rolling_size is larger than the size of numeric_sequence.
+        多变量多项式回归：滚动窗口生成训练集，预测下一个值。
         """
         if rolling_size > len(numeric_sequence):
-            raise ValueError("rolling_size cannot be larger than the size of numeric_sequence")
+            raise ValueError("滚动窗口大小不能超过序列长度")
 
-        # Generate datasets with the specified rolling size
         train_x, train_y = CalculateUtil.generate_datasets_with_rolling_size(
             data=numeric_sequence, rolling_size=rolling_size
         )
-
-        # Preparing input data for model training
-        input_x = np.array(train_x)
-        output_y = np.array(train_y)
-
-        # Scaling the features
+        X = np.array(train_x)
+        y = np.array(train_y)
         scaler = StandardScaler()
-        input_x_scaled = scaler.fit_transform(input_x)
-
-        # Creating and training the polynomial regression model
+        Xs = scaler.fit_transform(X)
         model = make_pipeline(PolynomialFeatures(degrees), LinearRegression())
-        model.fit(input_x_scaled, output_y)
+        model.fit(Xs, y)
 
-        # Preparing the last rolling window of data for prediction
-        test_x = np.array([numeric_sequence[-rolling_size:]])
-        test_x_scaled = scaler.transform(test_x)
-
-        # Predicting the next value
-        pred_y = model.predict(test_x_scaled)
-        return pred_y[0]
+        test = scaler.transform([numeric_sequence[-rolling_size:]])
+        return model.predict(test)[0]
 
     @staticmethod
     def harmonic_regression_next_value(numeric_sequence: List[int], frequency: float = 1.0) -> int:
         """
-        Predicts the next value in a sequence using harmonic regression.
-
-        Harmonic regression involves fitting a model with sine and cosine components to capture
-        periodic patterns in the data. This function predicts the next value in a given sequence
-        of numbers by fitting a harmonic model to the sequence.
-
-        :param numeric_sequence: A list or sequence of numbers to model.
-        :param frequency: The frequency of the periodic component to model.
-        :return: The predicted next value in the sequence as an integer.
+        谐波回归：拟合正弦、余弦分量进行预测。
         """
-        # Create feature matrix X and target vector y
-        X = np.array(numeric_sequence[:-1]).reshape(-1, 1)  # All elements except the last one
-        y = np.array(numeric_sequence[1:])  # All elements except the first one
+        X = np.array(numeric_sequence[:-1]).reshape(-1, 1)
+        y = np.array(numeric_sequence[1:])
+        sine = np.sin(2*np.pi*frequency*X)
+        cosine = np.cos(2*np.pi*frequency*X)
+        features = np.hstack((X, sine, cosine))
+        model = LinearRegression().fit(features, y)
 
-        # Generate sine and cosine features based on X and given frequency
-        sine_feature = np.sin(2 * np.pi * frequency * X)
-        cosine_feature = np.cos(2 * np.pi * frequency * X)
-
-        # Combine original features with sine and cosine features into a single feature matrix
-        features = np.hstack((X, sine_feature, cosine_feature))
-
-        # Create a LinearRegression model and fit it to the data with harmonic features
-        model = LinearRegression()
-        model.fit(features, y)
-
-        # Predict the next value in the sequence using the last element of numeric_sequence as input
-        next_value = np.array([[numeric_sequence[-1]]])
-        next_sine_feature = np.sin(2 * np.pi * frequency * next_value)
-        next_cosine_feature = np.cos(2 * np.pi * frequency * next_value)
-        next_features = np.hstack((next_value, next_sine_feature, next_cosine_feature))
-
-        next_value = model.predict(next_features)[0]
-
-        # Return the predicted value as an integer
-        return CalculateUtil.real_round(next_value)
+        last = np.array([[numeric_sequence[-1]]])
+        next_feat = np.hstack((
+            last,
+            np.sin(2*np.pi*frequency*last),
+            np.cos(2*np.pi*frequency*last)
+        ))
+        pred = model.predict(next_feat)[0]
+        return CalculateUtil.real_round(pred)
 
     @staticmethod
     def random_forest_regressor_transformer(
-            numeric_sequence: List[int],
-            rolling_size: int,
-            warm_start: bool = False,
-            random_state: int = 12,
-            param_distributions: Optional[Dict] = None,
-            param_overrides: Optional[Dict] = None
-    ) -> float:
+        numeric_sequence: List[int],
+        rolling_size: int,
+        warm_start: bool = False,
+        random_state: int = 12,
+        param_distributions: Optional[Dict] = None,
+        param_overrides: Optional[Dict] = None
+    ) -> Any:
+        """
+        随机森林回归管道预测：
+          - 生成滚动数据集；
+          - 可选随机搜索调参；
+          - 构建包含 CustomTransformer 的 Pipeline；
+          - 输出预测结果数组。
+        """
         train_x, train_y = CalculateUtil.generate_datasets_with_rolling_size(
             data=numeric_sequence, rolling_size=rolling_size
         )
-
-        # Convert lists to numpy arrays for compatibility with scikit-learn
-        input_x = np.array(train_x)
-        output_y = np.array(train_y)
-
-        # Scale the features to normalize data
+        X = np.array(train_x)
+        y = np.array(train_y)
         scaler = StandardScaler()
-        input_x_scaled = scaler.fit_transform(input_x)
+        Xs = scaler.fit_transform(X)
 
-        # Initialize and train the Random Forest Regressor
-        model = RandomForestRegressor(warm_start=warm_start, random_state=random_state)
+        # 基础随机森林
+        base_model = RandomForestRegressor(warm_start=warm_start, random_state=random_state)
         if param_distributions:
-            param_overrides = param_overrides or {}
-            random_search = RandomizedSearchCV(estimator=model, param_distributions=param_distributions,
-                                               **param_overrides)
-            random_search.fit(input_x_scaled, output_y)
-            model = RandomForestRegressor(warm_start=warm_start, random_state=random_state,
-                                          **random_search.best_params_)
+            search = RandomizedSearchCV(base_model, param_distributions, **(param_overrides or {}))
+            search.fit(Xs, y)
+            best = search.best_params_
+            base_model = RandomForestRegressor(warm_start=warm_start, random_state=random_state, **best)
 
-        model_pipline = Pipeline([
-            ('prediction_transformer', CustomTransformer(model)),
-            ('prediction_transformer_two', RandomForestRegressor(warm_start=warm_start, random_state=random_state)),
-            # ('poly_features', PolynomialFeatures(degree=2)),
-            # ('linear_regression', LinearRegression())
+        pipeline = Pipeline([
+            ('custom', CustomTransformer(base_model)),
+            ('final_rf', RandomForestRegressor(warm_start=warm_start, random_state=random_state))
         ])
-        model_pipline.fit(input_x_scaled, output_y)
+        pipeline.fit(Xs, y)
 
-        # Prepare the last rolling window of data for prediction
-        test_x = np.array([numeric_sequence[-rolling_size:]])
-        test_x_scaled = scaler.transform(test_x)
-
-        # Predicting the next value
-        pred_y = model_pipline.predict(test_x_scaled)
-        return pred_y
+        test = scaler.transform([numeric_sequence[-rolling_size:]])
+        return pipeline.predict(test)
 
     @staticmethod
     def random_forest_regressor_next_value(numeric_sequence: List[int], degree: int = 2) -> int:
         """
-        Predicts the next value in a sequence using a Random Forest Regressor.
-
-        A Random Forest Regressor is a type of ensemble machine learning model that uses
-        multiple decision trees to make predictions. It is particularly useful for regression
-        tasks on complex datasets because it can capture non-linear relationships between
-        variables. This function applies the model to a sequence of numbers to predict the
-        next value based on the observed trend.
-
-        :param numeric_sequence: A list or sequence of numbers to model.
-        :param degree: degree for Random Forest Regressor. Default is 1.
-        :return: The predicted next value in the sequence as an integer.
+        直接使用随机森林回归预测下一个值。
         """
-        # Convert the numeric sequence into a numpy array and reshape for sklearn
         data = np.array(numeric_sequence).reshape(-1, 1)
-
-        # Create an array representing time or the independent variable, reshaped as a column
-        index = np.array(range(len(data))).reshape(-1, 1)
-
-        # Create a RandomForestRegressor model and fit it to the data
-        poly_features = PolynomialFeatures(degree=degree)
-        index_poly = poly_features.fit_transform(index)
-        model = RandomForestRegressor()
-        # model.fit(index, data)
-        model.fit(index_poly, data.ravel())  # Flatten the array to fit the model
-
-        # Predict the next value in the sequence using the fitted model
-        next_index = np.array([len(data)]).reshape(-1, 1)  # Next index to predict
-        future_index_poly = poly_features.transform(next_index)
-        # prediction = model.predict(next_index)[0]
-        prediction = model.predict(future_index_poly)[0]
-
-        # Return the predicted value as an integer
-        return CalculateUtil.real_round(prediction)
+        X = np.arange(len(data)).reshape(-1, 1)
+        poly = PolynomialFeatures(degree)
+        Xp = poly.fit_transform(X)
+        model = RandomForestRegressor().fit(Xp, data.ravel())
+        next_Xp = poly.transform([[len(data)]])
+        pred = model.predict(next_Xp)[0]
+        return CalculateUtil.real_round(pred)
 
     @staticmethod
     def relative_strength_index(numeric_sequence: List[int], period: int = 14) -> float:
         """
-        Calculate the Relative Strength Index (RSI) using Exponential Moving Average (EMA).
-
-        :param numeric_sequence: A list of prices for a particular stock or asset.
-        :param period: The period over which to calculate the RSI, typically 14.
-        :return: The calculated RSI value.
+        计算 RSI（相对强弱指数）。
+        :param numeric_sequence: 数值序列
+        :param period: 计算周期，默认为14
+        :return: RSI 值（0-100）
         """
         if len(numeric_sequence) < period:
-            raise ValueError("Not enough data points to calculate RSI")
+            raise ValueError("数据点不足以计算 RSI")
 
-        deltas = [numeric_sequence[i + 1] - numeric_sequence[i] for i in range(len(numeric_sequence) - 1)]
-        gains = [max(delta, 0) for delta in deltas]
-        losses = [max(-delta, 0) for delta in deltas]
-
-        # Initialize EMA with SMA for the first 'period'
-        avg_gain = sum(gains[:period]) / period
-        avg_loss = sum(losses[:period]) / period
-
-        # Apply EMA formula for gains and losses
-        ema_factor = 2 / (period + 1)
+        deltas = np.diff(numeric_sequence)
+        gains = np.where(deltas > 0, deltas, 0)
+        losses = np.where(deltas < 0, -deltas, 0)
+        avg_gain = gains[:period].mean()
+        avg_loss = losses[:period].mean()
+        factor = 2 / (period + 1)
         for i in range(period, len(deltas)):
-            avg_gain = (gains[i] * ema_factor) + (avg_gain * (1 - ema_factor))
-            avg_loss = (losses[i] * ema_factor) + (avg_loss * (1 - ema_factor))
+            avg_gain = gains[i]*factor + avg_gain*(1-factor)
+            avg_loss = losses[i]*factor + avg_loss*(1-factor)
 
-        rs = avg_gain / avg_loss if avg_loss != 0 else 0
-        rsi = 100 - (100 / (1 + rs)) if avg_loss != 0 else 100
-
-        return rsi
+        rs = avg_gain/avg_loss if avg_loss != 0 else float('inf')
+        return 100 - 100/(1+rs) if avg_loss != 0 else 100
 
     @staticmethod
     def seasonal_autoregressive_integrated_moving_average_next_value(numeric_sequence: List[int]) -> int:
         """
-        Fit a Seasonal Autoregressive Integrated Moving Average (SARIMA) model to
-        the provided time series data and predict the next value in the series.
-
-        SARIMA models are used to forecast future points in a time series. They are
-        capable of modeling complex seasonal patterns by incorporating both non-seasonal
-        (ARIMA) and seasonal elements.
-
-        :param numeric_sequence: A list of numerical values representing a time series.
-        :return: The next integer value predicted by the SARIMA model.
+        SARIMA 模型预测下一个值：
+          - 自动搜索最优 (p,d,q)(P,D,Q,m) 参数；
+          - 拟合后预测 n_periods=1。
         """
-        # Convert the data to a numpy array for time series analysis
-        timeseries = np.array(numeric_sequence)
-
-        # Automatically discover the optimal order for the SARIMA model
-        stepwise_model = auto_arima(timeseries, start_p=2, start_q=2,
-                                    max_p=3, max_q=3, m=12,
-                                    start_P=1, start_Q=1, max_P=3, max_Q=3,
-                                    seasonal=True,
-                                    d=1, D=1, trace=False,
-                                    error_action='ignore',
-                                    suppress_warnings=True,
-                                    stepwise=True)
-
-        # Fit the SARIMA model to the time series data
-        model = stepwise_model.fit(timeseries)
-
-        # Predict the next value in the time series
+        ts = np.array(numeric_sequence)
+        model = auto_arima(
+            ts, start_p=2, start_q=2, max_p=3, max_q=3, m=12,
+            start_P=1, start_Q=1, max_P=3, max_Q=3,
+            seasonal=True, d=1, D=1, trace=False,
+            error_action='ignore', suppress_warnings=True, stepwise=True
+        )
         forecast = model.predict(n_periods=1)
-
-        # Return the predicted value as an integer
         return CalculateUtil.real_round(forecast[0])
