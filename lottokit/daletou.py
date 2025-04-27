@@ -15,7 +15,7 @@ from itertools import combinations
 from datetime import datetime, timedelta
 from collections import Counter, namedtuple
 from typing import List, Tuple, Any, Optional, Union, Dict, NamedTuple, Callable, Iterable, Set
-from .utils import IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil
+from .utils import IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil, PromptUtil
 
 
 class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
@@ -833,10 +833,12 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             """
             oe_ratio = self.calculate_odd_even_ratio(last_sequence)
             z_ratio  = self.calculate_zone_ratio(last_sequence, self.back_zone_ranges)
+            z_ratio_index = [min((n - 1 if n != 0 else n) for n in z_ratio),
+                             max((n - 1 if n != 0 else n) for n in z_ratio)]
             print(oe_ratio, z_ratio)
             dist     = self.calculate_euclidean_distance((z_ratio[0], z_ratio[-1]),(oe_ratio[0], oe_ratio[-1]))
             print(last_sequence)
-            num = self.real_round(abs(last_sequence[-(z_ratio[0]+1)] + last_sequence[-(z_ratio[-1]+1)])) % self.back_vocab_size
+            num = self.real_round(abs(last_sequence[-(z_ratio_index[0]+1)] + last_sequence[-(z_ratio_index[-1]+1)])) % self.back_vocab_size
             kills.add(num)
             self.detail_log(
                 self.app_log, show_details,
@@ -1094,7 +1096,6 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             if next_period is not None:
                 index = next((i for i, row in enumerate(weekday_data) if str(row[0]).endswith(str(next_period))), -1)
                 weekday_data = weekday_data[:index] if index != -1 else weekday_data[:]
-            print(weekday_data)
             return weekday_data
         except Exception as ex:
             self.app_log.error(f"get_previous_weekday_data 异常: {ex}")
@@ -1925,6 +1926,55 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
         # 返回空列表或可根据策略过滤后的最终组合
         return []
 
+    def llm_predict(
+        self,
+        next_period: Optional[int] = None,
+        next_weekday: Optional[int] = None,
+        show_details: Optional[str] = None,
+        window_size: int = 15,
+        output_dir: Optional[str] = None,
+    ) -> List[List[int]]:
+        def get_datas(_data, _size):
+            datas = []
+            for row in _data[-_size:]:
+                ld = self.convert_lottery_data(row)
+                f3 = f'{ld.zone_ratio[0]}:{ld.zone_ratio[1]}:{ld.zone_ratio[2]}'
+                f4 = f'{ld.odd_even_ratio[0]}:{ld.odd_even_ratio[1]}'
+                b1 = self.calculate_sum_total(ld.back)
+                b2 = self.calculate_span(ld.back)
+                b3 = self.calculate_zone_ratio(ld.back, zone_ranges=self.back_zone_ranges)
+                b3 = f'{b3[0]}:{b3[1]}'
+                b4 = self.calculate_odd_even_ratio(ld.back)
+                b4 = f'{b4[0]}:{b4[1]}'
+                d = (f"{ld.period}|{ld.weekday}|{','.join([str(d) for d in ld.front])}|{','.join([str(d) for d in ld.back])}|"
+                     f"{ld.sum_total}|{ld.span}|{f3}|{f4}|{b1}|{b2}|{b3}|{b4}")
+                datas.append(d)
+            return datas
+
+        output_dir = output_dir or "output"
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+        # 按“上一期”策略预测
+        history_data = self.get_previous_history_data(next_period=next_period)
+        # 期号|星期|前区|后区|前区和值|前区跨度|前区区间比|前区奇偶比|后区和值|后区跨度|后区区间比|后区奇偶比
+        datas = get_datas(history_data, window_size)
+        PromptUtil.generate_ds_prompt('\n'.join(datas), 'history', output_dir)
+        PromptUtil.generate_gpt_prompt('\n'.join(datas), 'history', output_dir)
+
+        # 按“同期期”策略预测
+        period_data = self.get_previous_period_data(next_period=next_period)
+        datas = get_datas(period_data, window_size)
+        PromptUtil.generate_ds_prompt('\n'.join(datas), 'period', output_dir)
+        PromptUtil.generate_gpt_prompt('\n'.join(datas), 'period', output_dir)
+
+        # 按“同星期”策略预测
+        weekday_data = self.get_previous_weekday_data(next_weekday=next_weekday, next_period=next_period)
+        datas = get_datas(weekday_data, window_size)
+        PromptUtil.generate_ds_prompt('\n'.join(datas), 'weekday', output_dir)
+        PromptUtil.generate_gpt_prompt('\n'.join(datas), 'weekday', output_dir)
+
+        return []
+
     def predict(
         self,
         next_period: int = None,
@@ -1953,6 +2003,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
         types: Dict[str, Callable] = {
             'model': self.model_predict,
             'analyze': self.analyze_predict,
+            'llm': self.llm_predict,
         }
 
         # 检查用户指定的预测类型是否被支持

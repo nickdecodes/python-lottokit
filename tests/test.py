@@ -12,10 +12,10 @@
 
 import sys
 sys.path.append('..')
-from lottokit import Daletou
+from lottokit import Daletou, ModelUtil
 
 if __name__ == '__main__':
     d = Daletou()
     # d.download_data()
     # d.fetch_data()
-    d.predict(next_period=2025044, next_weekday=3, predict_type='analyze')
+    d.predict(next_period=2025044, next_weekday=3, predict_type='llm', window_size=15)
