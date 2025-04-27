@@ -538,7 +538,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
                     return None
 
                 # Slice the history_data list to get the new relevant content
-                _new_data = sorted(recent_data[:last_index], key=lambda x: int(x[0]))
+                _new_data = sorted(recent_data[last_index + 1:], key=lambda x: int(x[0]))
             elif isinstance(_data, str):
                 _new_data = [_data.split()]
             else:
@@ -646,12 +646,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
 
         return periods
 
-    def get_kill_numbers(
-        self,
-        next_period: int = None,
-        next_weekday: int = None,
-        show_details: str = None
-    ) -> Tuple[Set[int], Set[int]]:
+    def get_kill_numbers(self, next_period: int = None, next_weekday: int = None, show_details: str = None) -> Tuple[Set[int], Set[int]]:
         """
         计算并返回前区与后区的杀号集合。
 
@@ -669,13 +664,8 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
 
         # 2. 读取并转换历史数据
         history_data = self.get_previous_history_data(next_period=next_period)
-        period_data  = [self.convert_lottery_data(d)
-                        for d in self.get_previous_period_data(next_period=next_period)]
-        weekday_data = [self.convert_lottery_data(d)
-                        for d in self.get_previous_weekday_data(
-                            next_period=next_period,
-                            next_weekday=next_weekday
-                        )]
+        period_data  = [self.convert_lottery_data(d) for d in self.get_previous_period_data(next_period=next_period)]
+        weekday_data = [self.convert_lottery_data(d) for d in self.get_previous_weekday_data(next_period=next_period, next_weekday=next_weekday)]
 
         # 3. 计算前区杀码
         self.detail_log(self.app_log, show_details, en="front", zh="前区")
@@ -684,13 +674,9 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             # 提取多条前区号码
             front_sequences = [self.calculate_front(d) for d in data]
             # 调用辅助方法计算杀号
-            tmp = self.calculate_front_kills(
-                front_sequences, next_period, next_weekday, show_details
-            )
+            tmp = self.calculate_front_kills(front_sequences, next_period, next_weekday, show_details)
             # 过滤到合法范围后加入结果集
-            front_kill_numbers.update(
-                {n for n in tmp if 1 <= n <= self.front_vocab_size}
-            )
+            front_kill_numbers.update({n for n in tmp if 1 <= n <= self.front_vocab_size})
         self.detail_log(
             self.app_log, show_details,
             en=f"front kill numbers: {sorted(front_kill_numbers)}, size: {len(front_kill_numbers)}",
@@ -702,12 +688,8 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
         back_kill_numbers = set()
         for data in (history_data, period_data, weekday_data):
             back_sequences = [self.calculate_back(d) for d in data]
-            tmp = self.calculate_back_kills(
-                back_sequences, next_weekday, show_details
-            )
-            back_kill_numbers.update(
-                {n for n in tmp if 1 <= n <= self.back_vocab_size}
-            )
+            tmp = self.calculate_back_kills(back_sequences, next_weekday, show_details)
+            back_kill_numbers.update({n for n in tmp if 1 <= n <= self.back_vocab_size})
         self.detail_log(
             self.app_log, show_details,
             en=f"back kill numbers: {sorted(back_kill_numbers)}, size: {len(back_kill_numbers)}",
@@ -716,13 +698,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
 
         return front_kill_numbers, back_kill_numbers
 
-    def calculate_front_kills(
-        self,
-        sequences: List[List[int]],
-        next_period: int,
-        next_weekday: int,
-        show_details: str = None
-    ) -> Set[int]:
+    def calculate_front_kills(self, sequences: List[List[int]], next_period: int, next_weekday: int, show_details: str = None) -> Set[int]:
         """
         辅助函数：根据最后一条前区序列计算杀号。
 
@@ -763,18 +739,10 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             z_ratio    = self.calculate_zone_ratio(last_sequence, self.front_zone_ranges)
             idx_min    = min(n-1 if n else n for n in z_ratio)
             idx_max    = max(n-1 if n else n for n in z_ratio)
-            dist       = self.calculate_euclidean_distance(
-                             (z_ratio[0], z_ratio[-1]),
-                             (oe_ratio[0], oe_ratio[-1])
-                         )
+            dist       = self.calculate_euclidean_distance((z_ratio[0], z_ratio[-1]),(oe_ratio[0], oe_ratio[-1]))
             set_nums = {
-                self.real_round(
-                    abs(last_sequence[idx_min] - last_sequence[idx_max])
-                ),
-                self.real_round(
-                    (abs(last_sequence[-idx_min-1] + last_sequence[-idx_max-1]) + dist)
-                    / next_weekday
-                ) % self.front_vocab_size
+                self.real_round(abs(last_sequence[idx_min] - last_sequence[idx_max])),
+                self.real_round((abs(last_sequence[-idx_min-1] + last_sequence[-idx_max-1]) + dist) / next_weekday) % self.front_vocab_size
             }
             kills.update(set_nums)
             self.detail_log(
@@ -794,10 +762,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
                     i = last_sequence.index(tmp[0])
                     tmp = [last_sequence[i-1], last_sequence[(i+1)%len(last_sequence)]]
                 if tmp:
-                    avg_set.add(
-                        self.real_round(sum(tmp)/next_weekday + len(tmp))
-                        % self.front_vocab_size
-                    )
+                    avg_set.add(self.real_round(sum(tmp)/next_weekday + len(tmp)) % self.front_vocab_size)
             kills.update(avg_set)
             self.detail_log(
                 self.app_log, show_details,
@@ -847,12 +812,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
 
         return kills
 
-    def calculate_back_kills(
-        self,
-        sequences: List[List[int]],
-        next_weekday: int,
-        show_details: str = None
-    ) -> Set[int]:
+    def calculate_back_kills(self, sequences: List[List[int]], next_weekday: int, show_details: str = None) -> Set[int]:
         """
         辅助函数：根据最后一条后区序列计算杀号。
 
@@ -873,13 +833,10 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             """
             oe_ratio = self.calculate_odd_even_ratio(last_sequence)
             z_ratio  = self.calculate_zone_ratio(last_sequence, self.back_zone_ranges)
-            dist     = self.calculate_euclidean_distance(
-                           (z_ratio[0], z_ratio[-1]),
-                           (oe_ratio[0], oe_ratio[-1])
-                       )
-            num = self.real_round(
-                      abs(last_sequence[-(z_ratio[0]+1)] + last_sequence[-(z_ratio[-1]+1)])
-                  ) % self.back_vocab_size
+            print(oe_ratio, z_ratio)
+            dist     = self.calculate_euclidean_distance((z_ratio[0], z_ratio[-1]),(oe_ratio[0], oe_ratio[-1]))
+            print(last_sequence)
+            num = self.real_round(abs(last_sequence[-(z_ratio[0]+1)] + last_sequence[-(z_ratio[-1]+1)])) % self.back_vocab_size
             kills.add(num)
             self.detail_log(
                 self.app_log, show_details,
@@ -898,10 +855,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
                     i = last_sequence.index(tmp[0])
                     tmp = [last_sequence[i-1], last_sequence[(i+1)%len(last_sequence)]]
                 if tmp:
-                    avg_set.add(
-                        self.real_round(sum(tmp)/next_weekday)
-                        % self.back_vocab_size
-                    )
+                    avg_set.add(self.real_round(sum(tmp)/next_weekday) % self.back_vocab_size)
             kills.update(avg_set)
             self.detail_log(
                 self.app_log, show_details,
@@ -914,12 +868,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
 
         return kills
 
-    def get_banker_numbers(
-        self,
-        next_period: int = None,
-        next_weekday: int = None,
-        show_details: str = None
-    ) -> Tuple[Set[int], Set[int]]:
+    def get_banker_numbers(self, next_period: int = None, next_weekday: int = None, show_details: str = None) -> Tuple[Set[int], Set[int]]:
         """
         计算并返回前区与后区的胆码集合。
 
@@ -952,9 +901,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
         for data in (period_data, weekday_data):
             seqs = [self.calculate_back(d) for d in data]
             tmp = self.calculate_back_bankers(seqs, next_weekday, show_details)
-            back_banker_numbers.update(
-                {n for n in tmp if 1 <= n <= self.back_vocab_size}
-            )
+            back_banker_numbers.update({n for n in tmp if 1 <= n <= self.back_vocab_size})
         self.detail_log(
             self.app_log, show_details,
             en=f"back banker numbers: {sorted(back_banker_numbers)}, size: {len(back_banker_numbers)}",
@@ -963,13 +910,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
 
         return front_banker_numbers, back_banker_numbers
 
-    def calculate_front_bankers(
-        self,
-        sequences: List[List[int]],
-        next_period: int,
-        next_weekday: int,
-        show_details: str = None
-    ) -> Set[int]:
+    def calculate_front_bankers(self, sequences: List[List[int]], next_period: int, next_weekday: int, show_details: str = None) -> Set[int]:
         """
         辅助函数：根据最后一条前区序列计算胆码。
 
@@ -987,8 +928,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             dist = self.calculate_euclidean_distance((z_ratio[0], z_ratio[-1]), (oe_ratio[0], oe_ratio[-1]))
             nums = {
                 self.real_round(abs(last_sequence[z_ratio[0]-1] - last_sequence[z_ratio[-1]-1])),
-                self.real_round((abs(last_sequence[-(z_ratio[0]+1)] + last_sequence[-(z_ratio[-1]+1)]) + dist)
-                                / next_weekday) % self.front_vocab_size
+                self.real_round((abs(last_sequence[-(z_ratio[0]+1)] + last_sequence[-(z_ratio[-1]+1)]) + dist) / next_weekday) % self.front_vocab_size
             }
             bankers.update(nums)
             self.detail_log(
@@ -1023,12 +963,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
 
         return bankers
 
-    def calculate_back_bankers(
-        self,
-        sequences: List[List[int]],
-        next_weekday: int,
-        show_details: str = None
-    ) -> Set[int]:
+    def calculate_back_bankers(self, sequences: List[List[int]], next_weekday: int, show_details: str = None) -> Set[int]:
         """
         辅助函数：根据最后一条号码序列和下期星期几，计算后区胆码集合。
 
@@ -1130,17 +1065,12 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
                     -1
                 )
                 period_data = period_data[:index] if index != -1 else period_data[:]
-            print(period_data)
             return period_data
         except Exception as ex:
             self.app_log.error(f"get_previous_period_data 异常: {ex}")
             return []
 
-    def get_previous_weekday_data(
-        self,
-        next_period: int = None,
-        next_weekday: int = None
-    ) -> List[List[Any]]:
+    def get_previous_weekday_data(self, next_period: int = None, next_weekday: int = None) -> List[List[Any]]:
         """
         从按星期分类的 JSON 文件中读取数据，并返回指定星期及期号之前的记录。
 
@@ -1164,6 +1094,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             if next_period is not None:
                 index = next((i for i, row in enumerate(weekday_data) if str(row[0]).endswith(str(next_period))), -1)
                 weekday_data = weekday_data[:index] if index != -1 else weekday_data[:]
+            print(weekday_data)
             return weekday_data
         except Exception as ex:
             self.app_log.error(f"get_previous_weekday_data 异常: {ex}")
@@ -1277,18 +1208,11 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
 
         raise IndexError(f"calculate_back: length {length} 不在预期尺寸列表中")
 
-    def revised_features(
-        self,
-        last_window_period_datas: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def revised_features(self, last_window_period_datas: Dict[str, Any]) -> Dict[str, Any]:
         """
         准备修正后的特征数据结构，供预测算法使用。
         """
-        def _feature_reviser(
-            predictions: Counter,
-            delta_size: int,
-            feature_key: str
-        ) -> Counter:
+        def _feature_reviser(predictions: Counter, delta_size: int, feature_key: str) -> Counter:
             """
             根据 feature_key 和 delta_size 过滤预测结果。
 
@@ -1315,22 +1239,14 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             for feature, item in last_window_period_datas.items()
         }
 
-    def calculate_features(
-        self,
-        lottery_datas: List[Lottery],
-        region: int = 3
-    ) -> Dict[str, Dict[str, List]]:
+    def calculate_features(self, lottery_datas: List[Lottery], region: int = 3) -> Dict[str, Dict[str, List]]:
         """
         计算并返回前区/后区的各种特征数据。
 
         支持按照 feature_keys 中定义的所有特征方法逐一计算，
         并对“跨度”、“和值”等特殊方法做列表封装。
         """
-        def _calculate_parser(
-            compute_method: Callable,
-            data: List[int],
-            param: Optional[List] = None
-        ) -> Any:
+        def _calculate_parser(compute_method: Callable, data: List[int], param: Optional[List] = None) -> Any:
             # 如果传入 param，则调用 compute_method(data, param)，否则 compute_method(data)
             return compute_method(data, param) if param is not None else compute_method(data)
 
@@ -1397,10 +1313,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
 
         return features
 
-    def calculate_predictions(
-        self,
-        feature_results: Dict[str, Dict[str, List[List]]]
-    ) -> Dict[str, Dict[str, Any]]:
+    def calculate_predictions(self, feature_results: Dict[str, Dict[str, List[List]]]) -> Dict[str, Dict[str, Any]]:
         """
         对每个特征和区段使用多种预测算法，生成预测结果集合。
 
@@ -1432,11 +1345,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
 
         return predictions
 
-    def handle_last_window_data(
-        self,
-        data: Optional[List[List[Any]]],
-        window: int = 10
-    ) -> Dict[str, Any]:
+    def handle_last_window_data(self, data: Optional[List[List[Any]]], window: int = 10) -> Dict[str, Any]:
         """
         处理历史开奖数据的最后 window 条记录，计算各区块特征比率并生成下一期预测。
 
@@ -1506,12 +1415,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
         # 7. 返回修正后的特征与预测结果
         return result
 
-    def predict_by_last_window_data(
-        self,
-        data: Optional[List[List[Any]]],
-        window: int = 10,
-        use_index: bool = False
-    ) -> List[Lottery]:
+    def predict_by_last_window_data(self, data: Optional[List[List[Any]]], window: int = 10, use_index: bool = False) -> List[Lottery]:
         """
         基于最近窗口数据调用多种预测模型，生成 Lottery 对象列表。
 
