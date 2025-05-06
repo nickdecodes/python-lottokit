@@ -65,7 +65,7 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
     ]  # Back area 012 road division
 
     # NamedTuple for t data
-    Lottery = namedtuple('Lottery', ['period', 'weekday', 'front', 'back', 'sum_total', 'span', 'zone_ratio', 'odd_even_ratio'])
+    Lottery = namedtuple('Lottery', ['period', 'weekday', 'front', 'back'])
 
     def __init__(self, **kwargs):
         """
@@ -1105,17 +1105,12 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
         """
         从原始列表解析并返回 Lottery 命名元组。
         列表格式示例（长度 ≥ 10）：
-          [period, weekday, f1, f2, f3, f4, f5, b1, b2,
-           sum_total, span, 'z0:z1:z2', 'o0:o1']
+          [period, weekday, f1, f2, f3, f4, f5, b1, b2]
         字段含义：
           - period: 期号（int/str）；
           - weekday: 星期（int, 1～7）；
           - front: 前区 5 个号码（索引 2–6）；
           - back: 后区 2 个号码（索引 7–8）；
-          - sum_total: 前区和值（倒数第4 项）；
-          - span: 前区跨度（倒数第3 项）；
-          - zone_ratio: 区段比例，形如 '2:1:2'（倒数第2 项）；
-          - odd_even_ratio: 奇偶比例，形如 '3:2'（最后一项）。
         解析失败时回退按原始顺序 unpack。
         """
         try:
@@ -1126,20 +1121,12 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             weekday = int(data[1]) if data[1] else ''
             front = data[2] if len(data) == 4 else self.calculate_front(data)
             back  = data[3] if len(data) == 4 else self.calculate_back(data)
-            sum_total     = int(data[-4]) if len(data) > self.origin_size else 0
-            span          = int(data[-3]) if len(data) > self.origin_size else 0
-            zone_ratio    = tuple(int(x) for x in str(data[-2]).split(':')) if len(data) > self.origin_size else ()
-            odd_even_ratio= tuple(int(x) for x in str(data[-1]).split(':')) if len(data) > self.origin_size else ()
 
             return self.Lottery(
                 period=period,
                 weekday=weekday,
                 front=front,
                 back=back,
-                sum_total=sum_total,
-                span=span,
-                zone_ratio=zone_ratio,
-                odd_even_ratio=odd_even_ratio
             )
         except Exception as ex:
             # 回退：直接按原始列表顺序 unpack
@@ -1938,16 +1925,20 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             datas = []
             for row in _data[-_size:]:
                 ld = self.convert_lottery_data(row)
-                f3 = f'{ld.zone_ratio[0]}:{ld.zone_ratio[1]}:{ld.zone_ratio[2]}'
-                f4 = f'{ld.odd_even_ratio[0]}:{ld.odd_even_ratio[1]}'
+                f1 = self.calculate_sum_total(ld.front)
+                f2 = self.calculate_span(ld.front)
+                f3 = self.calculate_zone_ratio(ld.front, zone_ranges=self.front_zone_ranges)
+                f4 = self.calculate_odd_even_ratio(ld.front)
+                f3 = f'{f3[0]}:{f3[1]}:{f3[2]}'
+                f4 = f'{f4[0]}:{f4[1]}'
                 b1 = self.calculate_sum_total(ld.back)
                 b2 = self.calculate_span(ld.back)
                 b3 = self.calculate_zone_ratio(ld.back, zone_ranges=self.back_zone_ranges)
-                b3 = f'{b3[0]}:{b3[1]}'
                 b4 = self.calculate_odd_even_ratio(ld.back)
+                b3 = f'{b3[0]}:{b3[1]}'
                 b4 = f'{b4[0]}:{b4[1]}'
                 d = (f"{ld.period}|{ld.weekday}|{','.join([str(d) for d in ld.front])}|{','.join([str(d) for d in ld.back])}|"
-                     f"{ld.sum_total}|{ld.span}|{f3}|{f4}|{b1}|{b2}|{b3}|{b4}")
+                     f"{f1}|{f2}|{f3}|{f4}|{b1}|{b2}|{b3}|{b4}")
                 datas.append(d)
             return datas
 

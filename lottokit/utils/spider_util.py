@@ -107,11 +107,14 @@ class SpiderUtil:
                         #         back.append(f'_{cell.text.strip()}_')
                         #     else:
                         #         front.append(f'_{cell.text.strip()}_')
-                    sum_total = cells[-4].text.strip()
-                    span = cells[-3].text.strip()
-                    zone_ratio = cells[-2].text.strip()
-                    odd_even_ratio = cells[-1].text.strip()
-                    all_rows.append([period, weekday, *front, *back, sum_total, span, zone_ratio, odd_even_ratio])
+                    # sum_total = cells[-4].text.strip()
+                    # span = cells[-3].text.strip()
+                    # zone_ratio = cells[-2].text.strip()
+                    # odd_even_ratio = cells[-1].text.strip()
+                    all_rows.append([
+                        period, weekday, *front, *back,
+                        # sum_total, span, zone_ratio, odd_even_ratio
+                    ])
         return all_rows
 
     @staticmethod
