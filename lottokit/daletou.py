@@ -499,8 +499,8 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             history_data = SpiderUtil.dlt_sina_full_data()
             self.app_log.info(f'is saving history record to {self.history_record_path}')
             self.write_csv_data_to_file(self.history_record_path, data=history_data, app_log=self.app_log)
-            self.analyze_same_period_numbers(history_data)
-            self.analyze_same_weekday_numbers(history_data)
+            # self.analyze_same_period_numbers(history_data)
+            # self.analyze_same_weekday_numbers(history_data)
         else:
             print(f"{self.history_record_path} already exists in {self.dataset_dir}. Use force=True to overwrite.")
 
@@ -555,8 +555,8 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
         self.write_csv_data_to_file(self.history_record_path, data=new_data, app_log=self.app_log)
 
         # update analyze
-        self.analyze_same_period_numbers(new_data)
-        self.analyze_same_weekday_numbers(new_data)
+        # self.analyze_same_period_numbers(new_data)
+        # self.analyze_same_weekday_numbers(new_data)
         # self.analyze_repeated_numbers([*old_data[-1:], *new_data])
         # self.analyze_edge_numbers([*old_data[-1:], *new_data])
         # self.analyze_cold_hot_numbers([*old_data[-4:], *new_data])
@@ -1049,6 +1049,13 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
           List[List[Any]]: 同一期号历史数据列表；出错时返回空列表。
         """
         try:
+            if not os.path.exists(self.period_record_path):
+                history_data = self.read_csv_data_from_file(
+                    self.history_record_path,
+                    app_log=self.app_log
+                )
+                self.analyze_same_period_numbers(history_data)
+
             # 1. 从文件读取按末两位期号分组的 JSON 数据
             period_data_map = self.read_json_data_from_file(
                 self.period_record_path,
@@ -1084,6 +1091,13 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
           List[List[Any]]: 同一天星期的历史记录列表；出错时返回空列表。
         """
         try:
+            if not os.path.exists(self.weekday_record_path):
+                history_data = self.read_csv_data_from_file(
+                    self.history_record_path,
+                    app_log=self.app_log
+                )
+                self.analyze_same_weekday_numbers(history_data)
+
             # 1. 从文件读取按星期分类的 JSON 数据
             weekday_data_map = self.read_json_data_from_file(
                 self.weekday_record_path,
@@ -2002,7 +2016,12 @@ class Daletou(IOUtil, ModelUtil, SpiderUtil, CalculateUtil, AnalyzeUtil):
             raise KeyError(f"不支持的预测类型：'{predict_type}'。可选值：{list(types.keys())}")
 
         # 根据预测类型调用对应方法，传入公共参数
-        predictions = types[predict_type](next_period=next_period,next_weekday=next_weekday,show_details=show_details,window_size=window_size)
+        predictions = types[predict_type](
+            next_period=next_period,
+            next_weekday=next_weekday,
+            show_details=show_details,
+            window_size=window_size
+        )
 
         # 返回最终预测结果
         return predictions
